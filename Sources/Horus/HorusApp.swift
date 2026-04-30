@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension Notification.Name {
+    static let quickMenuRequested = Notification.Name("quickMenuRequested")
+}
+
 @main
 struct HorusApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -13,9 +17,8 @@ struct HorusApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
-    private let hotkeyManager   = HotkeyManager()
+    private let hotkeyManager = HotkeyManager()
     private let screenshotManager = ScreenshotManager()
-    private lazy var quickMenuPanel = QuickMenuPanel(screenshots: screenshotManager)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let popover = NSPopover()
@@ -39,10 +42,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: .quickMenuRequested, object: nil
         )
 
-        hotkeyManager.actions[.area]      = { [weak self] in self?.triggerCapture(.area) }
-        hotkeyManager.actions[.window]    = { [weak self] in self?.triggerCapture(.window) }
-        hotkeyManager.actions[.screen]    = { [weak self] in self?.triggerCapture(.screen) }
-        hotkeyManager.actions[.quickMenu] = { [weak self] in self?.quickMenuPanel.toggle() }
+        RadialMenuManager.shared.setSelectionHandler { [weak self] selection in
+            guard let self else { return }
+            switch selection {
+            case .dismiss:
+                break
+            case .area:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.screenshotManager.captureArea() }
+            case .window:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.screenshotManager.captureWindow() }
+            case .screen:
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { self.screenshotManager.captureScreen() }
+            case .copy:
+                self.screenshotManager.copy()
+            case .save:
+                self.screenshotManager.saveAs()
+            case .annotate:
+                self.screenshotManager.annotate()
+            }
+        }
+
+        hotkeyManager.actions[.area] = { [weak self] in self?.triggerCapture(.area) }
+        hotkeyManager.actions[.window] = { [weak self] in self?.triggerCapture(.window) }
+        hotkeyManager.actions[.screen] = { [weak self] in self?.triggerCapture(.screen) }
+        hotkeyManager.actions[.quickMenu] = { RadialMenuManager.shared.present(mode: .atCursor) }
     }
 
     // MARK: - Private
@@ -58,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showQuickMenu() {
         popover?.performClose(nil)
-        quickMenuPanel.show()
+        RadialMenuManager.shared.present(mode: .centeredOnMainScreen)
     }
 
     private func triggerCapture(_ slot: HotkeySlot) {

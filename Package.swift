@@ -6,9 +6,14 @@ let package = Package(
     platforms: [
         .macOS(.v14),
     ],
+    products: [
+        .executable(name: "Horus", targets: ["Horus"]),
+    ],
+    dependencies: [],
     targets: [
         .executableTarget(
             name: "Horus",
+            dependencies: [],
             path: "Sources/Horus"
         ),
     ]

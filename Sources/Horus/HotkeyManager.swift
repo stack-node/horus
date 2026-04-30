@@ -54,11 +54,16 @@ struct Hotkey {
     }
 
     static func decoded(from dict: [String: Any]) -> Hotkey? {
-        guard
-            let kc = dict["kc"] as? UInt32,
-            let mr = dict["mr"] as? UInt,
-            let ch = dict["ch"] as? String
-        else { return nil }
+        let kc: UInt32?
+        if let v = dict["kc"] as? UInt32 {
+            kc = v
+        } else if let v = dict["kc"] as? Int {
+            kc = UInt32(v)
+        } else {
+            kc = nil
+        }
+        let mr = (dict["mr"] as? UInt) ?? (dict["mr"] as? Int).map(UInt.init)
+        guard let kc, let mr, let ch = dict["ch"] as? String else { return nil }
         return Hotkey(keyCode: kc, modifiers: .init(rawValue: mr), keyCharacter: ch)
     }
 }
@@ -152,7 +157,7 @@ final class HotkeyManager: ObservableObject {
             save()
             updateGlobeMonitor()
         } else {
-            var hkID = EventHotKeyID(signature: signature, id: slot.carbonID)
+            let hkID = EventHotKeyID(signature: signature, id: slot.carbonID)
             var ref: EventHotKeyRef?
             let status = RegisterEventHotKey(
                 hotkey.keyCode, hotkey.carbonModifiers,
@@ -223,12 +228,18 @@ final class HotkeyManager: ObservableObject {
         )
     }
 
-    // MARK: Persistence
+    // MARK: Persistence (~/.config/stacknode/horus/)
 
-    private let storageKey = "HorusHotkeys"
+    private let legacyUserDefaultsKey = "HorusHotkeys"
 
     func load() {
-        guard let saved = UserDefaults.standard.dictionary(forKey: storageKey) else { return }
+        if !FileManager.default.fileExists(atPath: HorusConfigPaths.hotkeysURL.path) {
+            migrateLegacyUserDefaultsIfNeeded()
+        }
+        guard let data = try? Data(contentsOf: HorusConfigPaths.hotkeysURL),
+              let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let saved = plist as? [String: Any]
+        else { return }
         for slot in HotkeySlot.allCases {
             if let d = saved[slot.rawValue] as? [String: Any], let hk = Hotkey.decoded(from: d) {
                 assign(hk, to: slot)
@@ -236,9 +247,25 @@ final class HotkeyManager: ObservableObject {
         }
     }
 
+    private func migrateLegacyUserDefaultsIfNeeded() {
+        guard let saved = UserDefaults.standard.dictionary(forKey: legacyUserDefaultsKey) else { return }
+        persistHotkeysRoot(saved)
+        UserDefaults.standard.removeObject(forKey: legacyUserDefaultsKey)
+    }
+
     private func save() {
         var dict: [String: Any] = [:]
         for (slot, hk) in assignments { dict[slot.rawValue] = hk.encoded() }
-        UserDefaults.standard.set(dict, forKey: storageKey)
+        persistHotkeysRoot(dict)
+    }
+
+    private func persistHotkeysRoot(_ dict: [String: Any]) {
+        let url = HorusConfigPaths.hotkeysURL
+        guard let data = try? PropertyListSerialization.data(
+            fromPropertyList: dict as NSDictionary,
+            format: .xml,
+            options: 0
+        ) else { return }
+        try? data.write(to: url, options: [.atomic])
     }
 }
