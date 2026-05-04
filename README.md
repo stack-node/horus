@@ -1,6 +1,6 @@
 # Horus
 
-A Swift application.
+Whores R Us
 
 ## Building
 
